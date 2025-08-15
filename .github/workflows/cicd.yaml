@@ -100,17 +100,16 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Pull latest image
-        run: docker pull ${{ needs.Continuous-Integration.outputs.image }}
-
-      - name: Stop existing container if running
+      - name: Pull new image (if available)
         run: |
-          docker ps -q --filter "name=myapp" | grep -q . && docker stop myapp && docker rm myapp || true
+          echo "Pulling new image..."
+          docker pull ${{ needs.Continuous-Integration.outputs.image }} || echo "No new image found, continuing..."
 
-      - name: Run new container
+      - name: Start new container before stopping old one
         run: |
+          echo "Starting new container..."
           docker run -d \
-            --name myapp \
+            --name myapp_new \
             --restart unless-stopped \
             -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
             -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
@@ -119,3 +118,15 @@ jobs:
             -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
             -p 8080:8080 \
             ${{ needs.Continuous-Integration.outputs.image }}
+
+      - name: Stop and remove old container
+        run: |
+          if docker ps -q --filter "name=myapp" | grep -q .; then
+            echo "Stopping old container..."
+            docker stop myapp && docker rm myapp
+          fi
+
+      - name: Rename new container to myapp
+        run: |
+          echo "Renaming container..."
+          docker rename myapp_new myapp

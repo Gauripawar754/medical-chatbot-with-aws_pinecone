@@ -17,7 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Now copy the rest of the application
 COPY . .
-
 # Optional: create non-root user
 RUN useradd -m appuser
 USER appuser
