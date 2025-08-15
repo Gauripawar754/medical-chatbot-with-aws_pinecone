@@ -20,6 +20,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
+      # Free up space before build
+      - name: Free disk space before build
+        run: |
+          echo "Before cleanup:"
+          df -h
+          docker system prune -af --volumes || true
+          sudo rm -rf /opt/hostedtoolcache || true
+          echo "After cleanup:"
+          df -h
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -64,6 +74,13 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
           IMAGE_TAG: latest
         run: echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # Final cleanup to avoid filling disk for future jobs
+      - name: Cleanup after build
+        if: always()
+        run: |
+          docker system prune -af --volumes || true
+          rm -rf /tmp/.buildx-cache || true
 
   Continuous-Deployment:
     needs: Continuous-Integration
