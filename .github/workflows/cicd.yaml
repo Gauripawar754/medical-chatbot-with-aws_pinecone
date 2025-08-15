@@ -7,8 +7,6 @@ on:
 jobs:
   Continuous-Integration:
     runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.set_image.outputs.image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,13 +39,21 @@ jobs:
           aws ecr describe-repositories --repository-names $ECR_REPOSITORY >/dev/null 2>&1 || \
           aws ecr create-repository --repository-name $ECR_REPOSITORY
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
       - name: Cache Docker layers
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-docker-${{ github.sha }}
+          key: docker-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-docker-
+            docker-${{ runner.os }}-
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -69,13 +75,9 @@ jobs:
 
       - name: Set image output
         id: set_image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
-          IMAGE_TAG: latest
-        run: echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        run: echo "image=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:latest" >> $GITHUB_OUTPUT
 
-      # Final cleanup to avoid filling disk for future jobs
+      # Cleanup to avoid disk issues
       - name: Cleanup after build
         if: always()
         run: |
@@ -100,14 +102,12 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Pull new image (if available)
+      - name: Pull new image
         run: |
-          echo "Pulling new image..."
-          docker pull ${{ needs.Continuous-Integration.outputs.image }} || echo "No new image found, continuing..."
+          docker pull ${{ needs.Continuous-Integration.outputs.image }}
 
       - name: Start new container before stopping old one
         run: |
-          echo "Starting new container..."
           docker run -d \
             --name myapp_new \
             --restart unless-stopped \
@@ -122,11 +122,8 @@ jobs:
       - name: Stop and remove old container
         run: |
           if docker ps -q --filter "name=myapp" | grep -q .; then
-            echo "Stopping old container..."
             docker stop myapp && docker rm myapp
           fi
 
-      - name: Rename new container to myapp
-        run: |
-          echo "Renaming container..."
-          docker rename myapp_new myapp
+      - name: Rename new container
+        run: docker rename myapp_new myapp
